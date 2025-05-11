@@ -158,7 +158,8 @@ Shader* Renderer::pickShader(MaterialType type) {
 void Renderer::renderGBuffer(Scene* scene, Camera* camera, unsigned int fbo) {
 
 	glBindFramebuffer(GL_FRAMEBUFFER, fbo);
-
+	glEnable(GL_DEPTH_TEST);
+	glDepthMask(GL_TRUE);
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 	glDisable(GL_FRAMEBUFFER_SRGB);
 	mOpacityObjects.clear();
@@ -191,6 +192,11 @@ void Renderer::renderGBuffer(Scene* scene, Camera* camera, unsigned int fbo) {
 		gBufferMat->mSpecularMask->setUnit(1);
 		gBufferMat->mSpecularMask->bind();
 
+		shader->setInt("normalTex", 2);
+		gBufferMat->mNormal->setUnit(2);
+		gBufferMat->mNormal->bind();
+
+
 		// Camera
 		shader->setVector3("cameraPosition", camera->mPosition);
 
@@ -208,6 +214,7 @@ void Renderer::renderGBuffer(Scene* scene, Camera* camera, unsigned int fbo) {
 void Renderer::renderLighting(Mesh* mesh, Camera* camera, std::vector<PointLight*> pointLights) {
 
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+	glDisable(GL_DEPTH_TEST);
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 	glEnable(GL_FRAMEBUFFER_SRGB);
 	auto geometry = mesh->mGeometry;

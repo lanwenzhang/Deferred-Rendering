@@ -3,6 +3,7 @@
 layout (location = 0) in vec3 aPos;
 layout (location = 1) in vec2 aUV;
 layout (location = 2) in vec3 aNormal;
+layout (location = 3) in vec3 aTangent;
 
 uniform mat4 modelMatrix;
 uniform mat4 viewMatrix;
@@ -12,6 +13,7 @@ uniform mat3 normalMatrix;
 out vec2 uv;
 out vec3 normal;
 out vec3 worldPosition;
+out mat3 tbn;
 
 
 void main()
@@ -30,5 +32,8 @@ void main()
 
     gl_Position = projectionMatrix * viewMatrix * transformPosition;
 
+    vec3 tangent = normalize(mat3(modelMatrix) * aTangent);
+    vec3 bitangent = normalize(cross(normal, tangent));
+    tbn = mat3(tangent, bitangent, normal);
 
 }

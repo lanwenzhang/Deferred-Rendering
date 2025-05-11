@@ -11,7 +11,7 @@ Object* AssimpLoader::load(const std::string& path) {
 	Object* rootNode = new Object();
 
 	Assimp::Importer importer;
-	const aiScene* scene = importer.ReadFile(path, aiProcess_Triangulate | aiProcess_GenNormals);
+	const aiScene* scene = importer.ReadFile(path, aiProcess_Triangulate | aiProcess_GenSmoothNormals | aiProcess_CalcTangentSpace);
 
 	// Check whether readfile succeed
 	if (!scene || scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE || !scene->mRootNode) {
@@ -65,6 +65,7 @@ Mesh* AssimpLoader::processMesh(aiMesh* aimesh, const aiScene* scene, const std:
 	std::vector<float> normals;
 	std::vector<float> uvs;
 	std::vector<unsigned int> indices;
+	std::vector<float> tangents;
 
 	// 1 Positions information
 	for (int i = 0; i < aimesh->mNumVertices; i++) {
@@ -87,6 +88,12 @@ Mesh* AssimpLoader::processMesh(aiMesh* aimesh, const aiScene* scene, const std:
 			uvs.push_back(0.0f);
 			uvs.push_back(0.0f);
 		}
+		if (aimesh->HasTangentsAndBitangents()) {
+
+			tangents.push_back(aimesh->mTangents[i].x);
+			tangents.push_back(aimesh->mTangents[i].y);
+			tangents.push_back(aimesh->mTangents[i].z);
+		}
 
 	}
 
@@ -104,14 +111,14 @@ Mesh* AssimpLoader::processMesh(aiMesh* aimesh, const aiScene* scene, const std:
 	}
 
 	// 3 Create geometry
-	auto geometry = new Geometry(positions, normals, uvs, indices);
+	auto geometry = new Geometry(positions, normals, uvs, indices, tangents);
 	auto material = new GBufferMaterial();
 
 	// 4 Create texture
 	material->mDiffuse = new Texture("assets/cyborg/cyborg_diffuse.png", 0, GL_SRGB_ALPHA);
-	material->mSpecularMask = new Texture("assets/cyborg/cyborg_specular.png", 1, GL_RGBA);
+	material->mSpecularMask = Texture::createNearestTexture("assets/cyborg/cyborg_specular.png");
+	material->mNormal = Texture::createNearestTexture("assets/cyborg/cyborg_normal.png");
 		
-
 	return new Mesh(geometry, material);
 
 }

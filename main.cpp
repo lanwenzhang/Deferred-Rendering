@@ -105,7 +105,7 @@ void prepare() {
 
     // 4 Create light
     glm::vec3 lightPositions[] = {
-            glm::vec3(-3.0f,  3.0f, 10.0f),
+            glm::vec3(-3.0f,  3.0f, 5.0f),
             glm::vec3(3.0f,  3.0f, 10.0f),
             glm::vec3(-3.0f, -3.0f, 10.0f),
             glm::vec3(3.0f, -3.0f, 10.0f),
@@ -199,8 +199,8 @@ int main() {
         cameraControl->update();
 
         renderer->setClearColor(clearColor);
+        //renderer->renderGBuffer(sceneOff, camera, 0);
         renderer->renderGBuffer(sceneOff, camera, gBuffer->mFBO);
-
         renderer->renderLighting(lightingMesh, camera, pointLights);
 
         renderIMGUI();
