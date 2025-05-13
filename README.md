@@ -1,7 +1,5 @@
 # Deferred-Rendering
 
-# PBR-Renderer
-
 Break down rendering into base pass and lighting pass
 
 ## Screenshots
