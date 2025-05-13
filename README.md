@@ -1,6 +1,6 @@
 # Deferred-Rendering
 
-Break down rendering into base pass and lighting pass
+Break down rendering into geometry pass and lighting pass
 
 ## Screenshots
 ![Deferred-Rendering](data/screenshot.gif)
