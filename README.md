@@ -2,7 +2,7 @@
 
 # PBR-Renderer
 
-Break down rendering into base pass and lighting pass in 
+Break down rendering into base pass and lighting pass
 
 ## Screenshots
 ![Deferred-Rendering](data/screenshot.gif)
