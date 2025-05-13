@@ -13,12 +13,9 @@ using ScrollCallback = void(*)(double offset);
 
 
 class Application {
-private:
-
-	Application();
+public:
 	~Application();
 
-public:
 
 	static Application* getInstance();
 
@@ -29,6 +26,7 @@ public:
 	void destroy();
 
 	GLFWwindow* getWindow() const { return mWindow; }
+
 	uint32_t getWidth()const { return mWidth; }
 	uint32_t getHeight()const { return mHeight; }
 
@@ -41,7 +39,6 @@ public:
 	void setScrollCallback(ScrollCallback callback) { mScrollCallback = callback; }
 
 private:
-
 	static void frameBufferSizeCallback(GLFWwindow* window, int width, int height);
 	static void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods);
 	static void mouseCallback(GLFWwindow* window, int button, int action, int mods);
@@ -49,8 +46,9 @@ private:
 	static void scrollCallback(GLFWwindow* window, double xoffset, double yoffset);
 
 private:
-
+	//global variable 
 	static Application* mInstance;
+
 	uint32_t mWidth{ 0 };
 	uint32_t mHeight{ 0 };
 	GLFWwindow* mWindow{ nullptr };
@@ -61,5 +59,5 @@ private:
 	CursorCallback mCursorCallback{ nullptr };
 	ScrollCallback mScrollCallback{ nullptr };
 
-
+	Application();
 };

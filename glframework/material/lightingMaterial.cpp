@@ -2,6 +2,7 @@
 
 LightingMaterial::LightingMaterial() {
 
+	mType = MaterialType::LightingMaterial;
 }
 
 LightingMaterial::~LightingMaterial(){

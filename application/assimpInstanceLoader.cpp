@@ -1,8 +1,8 @@
-#include "assimpLoader.h"
+#include "assimpInstanceLoader.h"
 #include "../glframework/tools/tools.h"
 #include "../glframework/material/gBufferMaterial.h"
 
-Object* AssimpLoader::load(const std::string& path) {
+Object* AssimpInstanceLoader::load(const std::string& path, int instanceCount) {
 
 	std::size_t lastIndex = path.find_last_of("//");
 	auto rootPath = path.substr(0, lastIndex + 1);
@@ -10,7 +10,7 @@ Object* AssimpLoader::load(const std::string& path) {
 	Object* rootNode = new Object();
 
 	Assimp::Importer importer;
-	const aiScene* scene = importer.ReadFile(path, aiProcess_Triangulate | aiProcess_GenNormals);
+	const aiScene* scene = importer.ReadFile(path, aiProcess_Triangulate | aiProcess_GenSmoothNormals | aiProcess_CalcTangentSpace);
 
 	// Check whether readfile succeed
 	if (!scene || scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE || !scene->mRootNode) {
@@ -19,12 +19,12 @@ Object* AssimpLoader::load(const std::string& path) {
 		return nullptr;
 	}
 
-	processNode(scene->mRootNode, rootNode, scene, rootPath);
+	processNode(scene->mRootNode, rootNode, scene, rootPath, instanceCount);
 
 	return rootNode;
 }
 
-void AssimpLoader::processNode(aiNode* ainode, Object* parent, const aiScene* scene, const std::string& rootPath) {
+void AssimpInstanceLoader::processNode(aiNode* ainode, Object* parent, const aiScene* scene, const std::string& rootPath, int instanceCount) {
 
 	// 1 Generate node and link parent
 	Object* node = new Object();
@@ -46,7 +46,7 @@ void AssimpLoader::processNode(aiNode* ainode, Object* parent, const aiScene* sc
 		int meshID = ainode->mMeshes[i];
 		aiMesh* aimesh = scene->mMeshes[meshID];
 
-		auto mesh = processMesh(aimesh, scene, rootPath);
+		auto mesh = processMesh(aimesh, scene, rootPath, instanceCount);
 
 		node->addChild(mesh);
 	}
@@ -54,16 +54,17 @@ void AssimpLoader::processNode(aiNode* ainode, Object* parent, const aiScene* sc
 	// 4 Check child
 	for (int i = 0; i < ainode->mNumChildren; i++) {
 
-		processNode(ainode->mChildren[i], node, scene, rootPath);
+		processNode(ainode->mChildren[i], node, scene, rootPath, instanceCount);
 	}
 }
 
-Mesh* AssimpLoader::processMesh(aiMesh* aimesh, const aiScene* scene, const std::string& rootPath) {
+InstancedMesh* AssimpInstanceLoader::processMesh(aiMesh* aimesh, const aiScene* scene, const std::string& rootPath, int instanceCount) {
 
 	std::vector<float> positions;
 	std::vector<float> normals;
 	std::vector<float> uvs;
 	std::vector<unsigned int> indices;
+	std::vector<float> tangents;
 
 	// 1 Positions information
 	for (int i = 0; i < aimesh->mNumVertices; i++) {
@@ -75,6 +76,7 @@ Mesh* AssimpLoader::processMesh(aiMesh* aimesh, const aiScene* scene, const std:
 		normals.push_back(aimesh->mNormals[i].x);
 		normals.push_back(aimesh->mNormals[i].y);
 		normals.push_back(aimesh->mNormals[i].z);
+		
 
 		// number 0 uvs are texture uv
 		if (aimesh->mTextureCoords[0]) {
@@ -85,6 +87,12 @@ Mesh* AssimpLoader::processMesh(aiMesh* aimesh, const aiScene* scene, const std:
 		else {
 			uvs.push_back(0.0f);
 			uvs.push_back(0.0f);
+		}
+		if (aimesh->HasTangentsAndBitangents()) {
+
+			tangents.push_back(aimesh->mTangents[i].x);
+			tangents.push_back(aimesh->mTangents[i].y);
+			tangents.push_back(aimesh->mTangents[i].z);
 		}
 
 	}
@@ -103,8 +111,9 @@ Mesh* AssimpLoader::processMesh(aiMesh* aimesh, const aiScene* scene, const std:
 	}
 
 	// 3 Create geometry
-	auto geometry = new Geometry(positions, normals, uvs, indices);
+	auto geometry = new Geometry(positions, normals, uvs, tangents, indices);
 	auto material = new GBufferMaterial();
+	material->mDepthWrite = false;
 
 	// 4 Create texture
 	if (aimesh->mMaterialIndex >= 0) {
@@ -116,18 +125,26 @@ Mesh* AssimpLoader::processMesh(aiMesh* aimesh, const aiScene* scene, const std:
 		if (texture == nullptr) {
 			texture = Texture::createTexture("assets/textures/defaultTexture.jpg", 0);
 		}
-
+		texture->setUnit(0);
 		material->mDiffuse = texture;
+
+		// 4.2 Read specular texture
+		auto specularMask = processTexture(aiMat, aiTextureType_SPECULAR, scene, rootPath);
+		if (specularMask == nullptr) {
+			specularMask = Texture::createTexture("assets/textures/defaultTexture.jpg", 0);
+		}
+		specularMask->setUnit(1);
+		material->mSpecularMask = specularMask;
 	}
 	else {
 		material->mDiffuse = Texture::createTexture("assets/textures/defaultTexture.jpg", 0);
 	}
 
-	return new Mesh(geometry, material);
+	return new InstancedMesh(geometry, material, instanceCount);
 
 }
 
-Texture* AssimpLoader::processTexture(
+Texture* AssimpInstanceLoader::processTexture(
 	const aiMaterial* aimat,
 	const aiTextureType& type,
 	const aiScene* scene,
@@ -161,7 +178,7 @@ Texture* AssimpLoader::processTexture(
 	return texture;
 }
 
-glm::mat4 AssimpLoader::getMat4f(aiMatrix4x4 value) {
+glm::mat4 AssimpInstanceLoader::getMat4f(aiMatrix4x4 value) {
 
 	glm::mat4 to(
 		value.a1, value.a2, value.a3, value.a4,

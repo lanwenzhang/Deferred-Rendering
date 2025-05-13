@@ -14,4 +14,5 @@ public:
 	Texture* mPosition{ nullptr };
 	Texture* mNormal{ nullptr };
 	Texture* mAlbedoSpec{ nullptr };
+	int mDisplayMode{ 0 };
 };

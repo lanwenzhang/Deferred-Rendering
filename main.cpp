@@ -2,24 +2,20 @@
 #include "wrapper/checkError.h"
 
 #include "application/application.h"
-#include "application/assimpLoader.h"
+#include "application/assimpInstanceLoader.h"
 #include "application/camera/perspectiveCamera.h"
-#include "application/camera/orthographicCamera.h"
-#include "application/camera/trackBallCameraControl.h"
 #include "application/camera/gameCameraControl.h"
 
 #include "glframework/geometry.h"
 #include "glframework/shader.h"
-#include "glframework/material/screenMaterial.h"
 #include "glframework/material/gBufferMaterial.h"
 #include "glframework/material/lightingMaterial.h"
 #include "glframework/texture.h"
 
 #include "glframework/mesh/mesh.h"
-#include "glframework/light/pointLight.h"
-#include "glframework/light/spotLight.h"
-
+#include "glframework/mesh/instancedMesh.h"
 #include "glframework/renderer/renderer.h"
+#include "glframework/light/pointLight.h"
 #include "glframework/scene.h"
 #include "glframework/framebuffer/framebuffer.h"
 
@@ -27,28 +23,32 @@
 #include "imgui/imgui_impl_glfw.h"
 #include "imgui/imgui_impl_opengl3.h"
 
-
-// 1 Variables
+// 1 Global variables
 // 1.1 Window
 int WIDTH = 2560;
 int HEIGHT = 1080;
-glm::vec3 clearColor{};
 
 // 1.2 Objects
+GBufferMaterial* gMat = nullptr;
+LightingMaterial* lMat = nullptr;
+Geometry* lGeo = nullptr;
 std::vector<PointLight*> pointLights{};
 Camera* camera = nullptr;
 GameCameraControl* cameraControl = nullptr;
 
 // 1.3 Render
+glm::vec3 clearColor{};
+
+// 1.3.1 Geometry pass
 Renderer* renderer = nullptr;
 Scene* sceneOff = nullptr;
 
+// 1.3.2 Lighting pass
 Framebuffer* gBuffer = nullptr;
-Mesh* lightingMesh = nullptr;
+Scene* scene = nullptr;
+int displayMode = 0;
 
-// --------------------------------------------
 
-// 2 Mouse and keyboard event
 void OnResize(int width, int height) {
 
     GL_CALL(glViewport(0, 0, width, height));
@@ -78,66 +78,130 @@ void OnScroll(double offset) {
 }
 
 
-// --------------------------------------------
+void setInstanceMatrix(Object* obj, int index, glm::mat4 matrix) {
 
-// 3 Prepare render objects and camera
+    if (obj->getType() == ObjectType::InstancedMesh) {
+
+        InstancedMesh* im = (InstancedMesh*)obj;
+        im->mInstanceMatrices[index] = matrix;
+
+    }
+
+    auto children = obj->getChildren();
+    for (int i = 0; i < children.size(); i++) {
+
+        setInstanceMatrix(children[i], index, matrix);
+    }
+}
+
+void updateInstanceMatrix(Object* obj) {
+
+    if (obj->getType() == ObjectType::InstancedMesh) {
+
+        InstancedMesh* im = (InstancedMesh*)obj;
+        im->updateMatrices();
+
+    }
+
+    auto children = obj->getChildren();
+    for (int i = 0; i < children.size(); i++) {
+
+        updateInstanceMatrix(children[i]);
+    }
+}
+
+void setInstanceMaterial(Object* obj, Material* material) {
+
+    if (obj->getType() == ObjectType::InstancedMesh) {
+
+        InstancedMesh* im = (InstancedMesh*)obj;
+        im->mMaterial = material;
+
+    }
+
+    auto children = obj->getChildren();
+    for (int i = 0; i < children.size(); i++) {
+
+        setInstanceMaterial(children[i], material);
+    }
+}
 
 void prepare() {
 
     gBuffer = Framebuffer::createGBufferFbo(WIDTH, HEIGHT);
     renderer = new Renderer();
     sceneOff = new Scene();
-
+    scene = new Scene();
+    
     // Geometry pass
-    auto cyborg = AssimpLoader::load("assets/cyborg/cyborg.obj");
-    cyborg->setPosition(glm::vec3(0.0f, 0.0f, 0.0f));
-    sceneOff->addChild(cyborg);
+    int rNum = 3;
+    int cNum = 3;
 
+    auto grassModel = AssimpInstanceLoader::load("assets/cyborg/cyborg.obj", rNum * cNum);
+   
+
+    glm::mat4 translate;
+    glm::mat4 scale;
+    glm::mat4 transform;
+
+    for (int r = 0; r < rNum; r++) {
+
+        for (int c = 0; c < cNum; c++) {
+
+            // 1 translate
+            translate = glm::translate(glm::mat4(1.0f), glm::vec3(c * 3.0f - 3.0f, -0.5f, r * 3.0f - 3.0f));
+
+            // 2 rotate
+            scale = glm::scale(glm::vec3(0.5f, 0.5f, 0.5f));
+
+            transform = translate * scale;
+
+            setInstanceMatrix(grassModel, r * cNum + c, transform);
+
+        }
+    }
+
+    updateInstanceMatrix(grassModel);
+
+    gMat = new GBufferMaterial();
+    gMat->mDiffuse = new Texture("assets/cyborg/cyborg_diffuse.png", 0);
+    gMat->mSpecularMask = Texture::createNearestTexture("assets/cyborg/cyborg_specular.png");
+    gMat->mNormal = Texture::createNearestTexture("assets/cyborg/cyborg_normal.png");
+    setInstanceMaterial(grassModel, gMat);
+    sceneOff->addChild(grassModel);
+    
 
     // Lighting pass
-    auto lightingGeo = Geometry::createScreenPlane();
-    auto lightingMat = new LightingMaterial();
-    lightingMat->mPosition = gBuffer->mGBufferAttachment[0];
-    lightingMat->mNormal = gBuffer->mGBufferAttachment[1];
-    lightingMat->mAlbedoSpec = gBuffer->mGBufferAttachment[2];
-    lightingMesh = new Mesh(lightingGeo, lightingMat);
+    lGeo = Geometry::createScreenPlane();
+    lMat = new LightingMaterial();
+    lMat->mPosition = gBuffer->mGBufferAttachment[0];
+    lMat->mNormal = gBuffer->mGBufferAttachment[1];
+    lMat->mAlbedoSpec = gBuffer->mGBufferAttachment[2];
+    lMat->mDisplayMode = displayMode;
+    lMat->mDepthTest = false;
+    auto lightingMesh = new Mesh(lGeo, lMat);
+    scene->addChild(lightingMesh);
 
 
-    // 4 Create light
-    glm::vec3 lightPositions[] = {
-            glm::vec3(-3.0f,  3.0f, 5.0f),
-            glm::vec3(3.0f,  3.0f, 10.0f),
-            glm::vec3(-3.0f, -3.0f, 10.0f),
-            glm::vec3(3.0f, -3.0f, 10.0f),
-    };
-    glm::vec3 lightColors[] = {
-        glm::vec3(1.0f, 1.0f, 1.0f),
-        glm::vec3(1.0f, 1.0f, 1.0f),
-        glm::vec3(1.0f, 1.0f, 1.0f),
-        glm::vec3(1.0f, 1.0f, 1.0f)
-    };
-    for (int i = 0; i < 4; i++) {
+    for (int i = 0; i < 32; i++) {
         auto pointLight = new PointLight();
-        pointLight->setPosition(lightPositions[i]);
-        pointLight->mColor = lightColors[i];
+        pointLight->setPosition(glm::vec3(static_cast<float>(((rand() % 100) / 100.0) * 6.0 - 3.0),
+                                          static_cast<float>(((rand() % 100) / 100.0) * 6.0 - 4.0),
+                                          static_cast<float>(((rand() % 100) / 100.0) * 6.0 - 3.0)));
+        pointLight->mColor = (glm::vec3(1.0f, 1.0f, 1.0f));
         pointLights.push_back(pointLight);
     }
 }
 
-
 void prepareCamera() {
 
-    camera = new PerspectiveCamera(60.0f, (float)glApp->getWidth() / glApp->getHeight(), 0.1f, 1000.0f);
+    camera = new PerspectiveCamera(80.0f, (float)glApp->getWidth() / glApp->getHeight(), 0.1f,1000.0f);
 
     cameraControl = new GameCameraControl();
     cameraControl->setCamera(camera);
     cameraControl->setSensitivity(0.4f);
-    cameraControl->setSpeed(0.1f);
+    cameraControl->setSpeed(0.01f);
 }
-
-// --------------------------------------------
-
-// 4 Prepare UI
 
 void initIMGUI() {
 
@@ -156,7 +220,9 @@ void renderIMGUI() {
     ImGui::NewFrame();
 
     // 2 GUI widget
-    ImGui::Begin("MaterialEditor");
+    ImGui::Begin("GrassMaterialEditor");
+    const char* modes[] = { "Final Lighting", "Position", "Normal", "Albedo", "Specular"};
+    ImGui::Combo("Display Mode", &displayMode, modes, IM_ARRAYSIZE(modes));
     ImGui::End();
 
     // 3 Render
@@ -167,28 +233,24 @@ void renderIMGUI() {
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 }
 
-
-
-// 5 Render
 int main() {
 
-    // 5.1 Initial the window
+    // 1 Initial the window
     if (!glApp->init(WIDTH, HEIGHT)) {
         return -1;
     }
 
-    // 5.2 Size and keyboard callback
+    // 2 Size and keyboard callback
     glApp->setResizeCallback(OnResize);
     glApp->setKeyBoardCallback(OnKey);
     glApp->setMouseCallback(OnMouse);
     glApp->setCursorCallback(OnCursor);
     glApp->setScrollCallback(OnScroll);
 
-    // 5.3 Set openGl rendering viewport and clear canvas color
+    // 3 Set openGl rendering viewport and clear canvas color
     GL_CALL(glViewport(0, 0, WIDTH, HEIGHT));
     GL_CALL(glClearColor(0.0f, 0.18f, 0.65f, 1.0f));
 
-    // 4 Set up camera, objects, UI
     prepareCamera();
     prepare();
     initIMGUI();
@@ -197,11 +259,14 @@ int main() {
     while (glApp->update()) {
 
         cameraControl->update();
-
         renderer->setClearColor(clearColor);
-        //renderer->renderGBuffer(sceneOff, camera, 0);
-        renderer->renderGBuffer(sceneOff, camera, gBuffer->mFBO);
-        renderer->renderLighting(lightingMesh, camera, pointLights);
+        lMat->mDisplayMode = displayMode;
+
+        // 4.1 Geometry pass
+        renderer->render(sceneOff, camera, {}, gBuffer->mFBO);
+
+        // 4.2 Lighting pass
+        renderer->render(scene, camera, pointLights, 0);
 
         renderIMGUI();
     }

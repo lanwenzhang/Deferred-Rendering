@@ -23,5 +23,5 @@ void main()
     gAlbedoSpec.rgb = texture(diffuse, uv).rgb;
 
     gAlbedoSpec.a = texture(specular, uv).r;
-
+//    FragColor = vec4(texture(diffuse, uv).rgb, 1.0);
 }

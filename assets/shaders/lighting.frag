@@ -3,48 +3,66 @@
 in vec2 uv;
 out vec4 FragColor;
 
-#include "common/lightStruct.glsl"
-
-
 uniform sampler2D gPosition;
 uniform sampler2D gNormal;
 uniform sampler2D gAlbedoSpec;
-
 uniform vec3 cameraPosition;
 
-uniform PointLight pointLights[4];
+uniform int displayMode; // 0: Final, 1: Position, 2: Normal, 3: AlbedoSpec
 
-void main(){
-	
-	vec3 PositionMap = texture(gPosition, uv).rgb;
-    vec3 normalMap = texture(gNormal, uv).rgb;
+struct PointLight {
+    vec3 position;
+    vec3 color;
+    float specularIntensity;
+    float k2;
+    float k1;
+    float kc;
+};
+
+uniform PointLight pointLights[32];
+
+void main() {
+
+    vec3 PositionMap = texture(gPosition, uv).rgb;
+    vec3 normalMap = normalize(texture(gNormal, uv).rgb);
     vec3 diffuseMap = texture(gAlbedoSpec, uv).rgb;
     float specularMap = texture(gAlbedoSpec, uv).a;
 
-    // ambient
-    vec3 result = diffuseMap * 0.1;
-	vec3 viewDir = normalize(cameraPosition - PositionMap);
+    if (displayMode == 1) {
+        FragColor = vec4(PositionMap * 0.5, 1.0); // scaled for visibility
+        return;
+    } else if (displayMode == 2) {
+        FragColor = vec4(normalMap * 0.5 + 0.5, 1.0); // normalized to 0~1
+        return;
+    } else if (displayMode == 3) {
+        FragColor = vec4(diffuseMap, 1.0);
+        return;
+    }else if (displayMode == 4) {
+        FragColor = vec4(specularMap, specularMap, specularMap, 1.0);
+        return;
+    }
 
-    for(int i = 0; i < 4; i++){
-        
-        // diffuse
+
+    // Final lit result
+    vec3 result = diffuseMap * 0.3;
+    vec3 viewDir = normalize(cameraPosition - PositionMap);
+
+    for (int i = 0; i < 32; i++) {
         vec3 lightDir = normalize(pointLights[i].position - PositionMap);
         vec3 diffuse = max(dot(normalMap, lightDir), 0.0) * diffuseMap * pointLights[i].color;
 
-        // specular
         vec3 halfwayDir = normalize(lightDir + viewDir);
-        float spec = pow(max(dot(normalMap, halfwayDir), 0.0), 4.0);
+        float spec = pow(max(dot(normalMap, halfwayDir), 0.0), 16.0);
         vec3 specular = pointLights[i].color * spec * specularMap;
 
-        // attenuation
         float dist = length(pointLights[i].position - PositionMap);
-        float attenuation = 1.0 / (0.44 * dist * dist + 0.35 * dist + 1);
-        
+        float attenuation = 1.0 / (0.44 * dist * dist + 0.35 * dist + 1.0);
+
         diffuse *= attenuation;
         specular *= attenuation;
+
         result += diffuse + specular;
     }
 
     FragColor = vec4(result, 1.0);
-
 }

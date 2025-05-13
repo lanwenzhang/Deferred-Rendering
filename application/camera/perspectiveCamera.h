@@ -11,7 +11,7 @@ public:
 
 	void scale(float deltaScale)override;
 
-public:
+private:
 	float mFovy = 0.0f;
 	float mAspect = 0.0f;
 };

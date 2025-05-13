@@ -1,5 +1,5 @@
 # 1 Set version and project name
-project(DeferredRendering)
+project(Deferred)
 cmake_minimum_required(VERSION 3.12)
 set(CMAKE_CXX_STANDARD 17)
 add_definitions (-DDEBUG)
@@ -11,14 +11,11 @@ file(COPY ${copyResources} DESTINATION ${CMAKE_BINARY_DIR})
 # 3 Third party
 # 3.1 Include third party .h
 include_directories(
-
 	SYSTEM ${CMAKE_CURRENT_SOURCE_DIR}/thirdParty/include
-	SYSTEM ${CMAKE_CURRENT_SOURCE_DIR}/application/miniz
 )
 
 # 3.2 Link third party .lib
 link_directories(
-
 	SYSTEM ${CMAKE_CURRENT_SOURCE_DIR}/thirdParty/lib
 )
 

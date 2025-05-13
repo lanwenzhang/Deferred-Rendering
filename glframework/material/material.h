@@ -3,12 +3,8 @@
 #include "../core.h"
 
 enum class MaterialType {
-
-	ScreenMaterial,
-	CubeMaterial,
-	PbrMaterial,
-	PhongMaterial,
-	GBufferMaterial
+	GBufferMaterial,
+	LightingMaterial
 };
 
 class Material {

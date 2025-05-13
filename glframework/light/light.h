@@ -1,9 +1,8 @@
 #pragma once
 
 #include "../core.h"
-#include "../object.h"
 
-class Light :public Object{
+class Light {
 
 public:
 

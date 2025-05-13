@@ -1,21 +1,257 @@
 #include "renderer.h"
-#include "../material/screenMaterial.h"
-#include "../material/cubeMaterial.h"
-#include "../material/advanced/pbrMaterial.h"
-#include "../material/phongMaterial.h"
+#include <iostream>
 #include "../material/gBufferMaterial.h"
 #include "../material/lightingMaterial.h"
-#include "../../application/camera/orthographicCamera.h"
+#include "../mesh/instancedMesh.h"
+#include <string>
+#include <algorithm>
 
 Renderer::Renderer() {
 
-	mScreenShader = new Shader("assets/shaders/screen.vert", "assets/shaders/screen.frag");
 	mGBufferShader = new Shader("assets/shaders/gBuffer.vert", "assets/shaders/gBuffer.frag");
 	mLightingShader = new Shader("assets/shaders/lighting.vert", "assets/shaders/lighting.frag");
 }
 
 Renderer::~Renderer() {
 
+}
+
+void Renderer::render(Scene* scene, Camera* camera, std::vector<PointLight*> pointLights,unsigned int fbo) {
+
+	glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+
+
+	// 1 Depth and stencil test
+	// 1.1 Depth test
+	glEnable(GL_DEPTH_TEST);
+	glDepthFunc(GL_LESS);
+	glDepthMask(GL_TRUE);
+
+	// 1.2 Polygon offset
+	glDisable(GL_POLYGON_OFFSET_FILL);
+	glDisable(GL_POLYGON_OFFSET_LINE);
+
+	// 1.3 Stencil test
+	glEnable(GL_STENCIL_TEST);
+	glStencilOp(GL_KEEP, GL_KEEP, GL_KEEP);
+	glStencilMask(0xFF);
+
+	// 1.4 Blend
+	glDisable(GL_BLEND);
+
+	// 2 Clear canvas
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+
+	// 3 Clear two containers
+	mOpacityObjects.clear();
+	mTransparentObjects.clear();
+
+	projectObject(scene);
+
+	std::sort(
+		mTransparentObjects.begin(),
+		mTransparentObjects.end(),
+		[camera](const Mesh* a, const Mesh* b) {
+
+
+			auto viewMatrix = camera->getViewMatrix();
+
+			auto modelMatrixA = a->getModelMatrix();
+			auto worldPositionA = modelMatrixA * glm::vec4(0.0, 0.0, 0.0, 1.0);
+			auto cameraPositionA = viewMatrix * worldPositionA;
+
+			auto modelMatrixB = b->getModelMatrix();
+			auto worldPositionB = modelMatrixB * glm::vec4(0.0, 0.0, 0.0, 1.0);
+			auto cameraPositionB = viewMatrix * worldPositionB;
+
+			return cameraPositionA.z < cameraPositionB.z;
+		}
+	);
+
+	// 4 Render two containers
+	for (int i = 0; i < mOpacityObjects.size(); i++) {
+
+		renderObject(mOpacityObjects[i], camera, pointLights);
+
+	}
+
+
+	for (int i = 0; i < mTransparentObjects.size(); i++) {
+
+		renderObject(mTransparentObjects[i], camera, pointLights);
+
+	}
+
+
+}
+
+void Renderer::projectObject(Object* obj) {
+
+	if (obj->getType() == ObjectType::Mesh || obj->getType() == ObjectType::InstancedMesh) {
+
+		Mesh* mesh = (Mesh*)obj;
+		auto material = mesh->mMaterial;
+		if (material->mBlend) {
+
+			mTransparentObjects.push_back(mesh);
+		}
+		else {
+
+			mOpacityObjects.push_back(mesh);
+		}
+	}
+
+	auto children = obj->getChildren();
+	for (int i = 0; i < children.size(); i++) {
+
+		projectObject(children[i]);
+	}
+}
+
+Shader* Renderer::pickShader(MaterialType type) {
+
+	Shader* result = nullptr;
+
+	switch (type) {
+	case MaterialType::GBufferMaterial:
+		result = mGBufferShader;
+		break;
+	case MaterialType::LightingMaterial:
+		result = mLightingShader;
+		break;
+	default:
+		std::cout << "Unkown material type to shader" << std::endl;
+		break;
+	}
+
+	return result;
+}
+
+void Renderer::renderObject(Object* object, Camera* camera, std::vector<PointLight*> pointLights) {
+
+	// 1 Render only mesh
+	if (object->getType() == ObjectType::Mesh || object->getType() == ObjectType::InstancedMesh) {
+
+		// 1.1 It is a mesh
+		auto mesh = (Mesh*)object;
+		auto geometry = mesh->mGeometry;
+
+		Material* material = nullptr;
+		if (mGlobalMaterial != nullptr) {
+
+			material = mGlobalMaterial;
+		}
+		else {
+
+			material = mesh->mMaterial;
+		}
+
+
+		// 2 Set rendering status
+		setDepthState(material);
+		//setPolygonOffsetState(material);
+		//setStencilState(material);
+		//setBlendState(material);
+		//setFaceCullingState(material);
+
+		// 3.1 Choose shader
+		Shader* shader = pickShader(material->mType);
+
+		// 3.2 Update uniform
+		// 3.2.1 Create program
+		shader->begin();
+
+		switch (material->mType) {
+
+		case MaterialType::GBufferMaterial: {
+
+			// pointer type change
+			GBufferMaterial* gBufferMat = (GBufferMaterial*)mesh->mMaterial;			
+			InstancedMesh* im = (InstancedMesh*)mesh;
+
+			im->sortMatrices(camera->getViewMatrix());
+			im->updateMatrices();
+
+			// Texture bind and sampling
+			shader->setInt("diffuse", 0);
+			gBufferMat->mDiffuse->setUnit(0);
+			gBufferMat->mDiffuse->bind();
+
+			shader->setInt("specular", 1);
+			gBufferMat->mSpecularMask->setUnit(1);
+			gBufferMat->mSpecularMask->bind();
+
+			shader->setInt("normalTex", 2);
+			gBufferMat->mNormal->setUnit(2);
+			gBufferMat->mNormal->bind();
+
+
+			// 3.2.3 MVP matrix
+			shader->setMatrix4x4("modelMatrix", mesh->getModelMatrix());
+			shader->setMatrix4x4("viewMatrix", camera->getViewMatrix());
+			shader->setMatrix4x4("projectionMatrix", camera->getProjectionMatrix());
+
+			//auto normalMatrix = glm::mat3(glm::transpose(glm::inverse(mesh->getModelMatrix())));
+			//shader->setMatrix3x3("normalMatrix", normalMatrix);
+
+
+			// 3.2.4 Camera
+			shader->setVector3("cameraPosition", camera->mPosition);
+
+		}
+			break;
+		case MaterialType::LightingMaterial: {
+
+			// pointer type change
+			LightingMaterial* lightingMat = (LightingMaterial*)mesh->mMaterial;
+
+
+			// Texture bind and sampling
+			shader->setInt("gPosition", 0);
+			lightingMat->mPosition->setUnit(0);
+			lightingMat->mPosition->bind();
+
+			shader->setInt("gNormal", 1);
+			lightingMat->mNormal->setUnit(1);
+			lightingMat->mNormal->bind();
+
+			shader->setInt("gAlbedoSpec", 2);
+			lightingMat->mAlbedoSpec->setUnit(2);
+			lightingMat->mAlbedoSpec->bind();
+
+			shader->setInt("displayMode",lightingMat->mDisplayMode);
+
+			// 3.2.4 Camera
+			shader->setVector3("cameraPosition", camera->mPosition);
+
+			for (int i = 0; i < pointLights.size(); i++) {
+
+				shader->setVector3("pointLights[" + std::to_string(i) + "].color", pointLights[i]->mColor);
+				shader->setVector3("pointLights[" + std::to_string(i) + "].position", pointLights[i]->getPosition());
+			}
+
+		}
+			break;
+		default:
+			break;
+		}
+
+		// 3.3 VAO
+		glBindVertexArray(geometry->getVao());
+
+		// 3.4 Draw
+		if (object->getType() == ObjectType::InstancedMesh) {
+
+			InstancedMesh* im = (InstancedMesh*)mesh;
+			glDrawElementsInstanced(GL_TRIANGLES, geometry->getIndicesCount(), GL_UNSIGNED_INT, 0, im->mInstanceCount);
+
+		}
+		else {
+
+			glDrawElements(GL_TRIANGLES, geometry->getIndicesCount(), GL_UNSIGNED_INT, 0);
+
+		}
+	}
 }
 
 void Renderer::setClearColor(glm::vec3 color) {
@@ -107,146 +343,3 @@ void Renderer::setFaceCullingState(Material* material) {
 		glDisable(GL_CULL_FACE);
 	}
 }
-
-void Renderer::projectObject(Object* obj) {
-
-	if (obj->getType() == ObjectType::Mesh) {
-
-		Mesh* mesh = (Mesh*)obj;
-		auto material = mesh->mMaterial;
-		if (material->mBlend) {
-
-			mTransparentObjects.push_back(mesh);
-		}
-		else {
-
-			mOpacityObjects.push_back(mesh);
-		}
-	}
-
-	auto children = obj->getChildren();
-	for (int i = 0; i < children.size(); i++) {
-
-		projectObject(children[i]);
-	}
-}
-
-Shader* Renderer::pickShader(MaterialType type) {
-
-	Shader* result = nullptr;
-
-	switch (type) {
-
-	case MaterialType::ScreenMaterial:
-		result = mScreenShader;
-		break;
-	case MaterialType::CubeMaterial:
-		result = mCubeShader;
-		break;
-	case MaterialType::PhongMaterial:
-		result = mPhongShader;
-		break;
-	default:
-		std::cout << "Unkown material type to shader" << std::endl;
-		break;
-	}
-
-	return result;
-}
-
-
-void Renderer::renderGBuffer(Scene* scene, Camera* camera, unsigned int fbo) {
-
-	glBindFramebuffer(GL_FRAMEBUFFER, fbo);
-	glEnable(GL_DEPTH_TEST);
-	glDepthMask(GL_TRUE);
-	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-	glDisable(GL_FRAMEBUFFER_SRGB);
-	mOpacityObjects.clear();
-	mTransparentObjects.clear();
-
-	projectObject(scene);
-
-	for (auto mesh : mOpacityObjects) {
-
-		auto geometry = mesh->mGeometry;
-		GBufferMaterial* gBufferMat = (GBufferMaterial*)mesh->mMaterial;
-		Shader* shader = mGBufferShader;
-		shader->begin();
-
-		// MVP
-		shader->setMatrix4x4("modelMatrix", mesh->getModelMatrix());
-		shader->setMatrix4x4("viewMatrix", camera->getViewMatrix());
-		shader->setMatrix4x4("projectionMatrix", camera->getProjectionMatrix());
-
-		// Normal
-		auto normalMatrix = glm::mat3(glm::transpose(glm::inverse(mesh->getModelMatrix())));
-		shader->setMatrix3x3("normalMatrix", normalMatrix);
-		
-		// Diffuse + Specular
-		shader->setInt("diffuse", 0);
-		gBufferMat->mDiffuse->setUnit(0);
-		gBufferMat->mDiffuse->bind();
-
-		shader->setInt("specular", 1);
-		gBufferMat->mSpecularMask->setUnit(1);
-		gBufferMat->mSpecularMask->bind();
-
-		shader->setInt("normalTex", 2);
-		gBufferMat->mNormal->setUnit(2);
-		gBufferMat->mNormal->bind();
-
-
-		// Camera
-		shader->setVector3("cameraPosition", camera->mPosition);
-
-		// VAO
-		glBindVertexArray(geometry->getVao());
-
-		// 3.4 Draw
-		glDrawElements(GL_TRIANGLES, geometry->getIndicesCount(), GL_UNSIGNED_INT, 0);
-		shader->end();
-	}
-
-	glBindFramebuffer(GL_FRAMEBUFFER, 0);
-}
-
-void Renderer::renderLighting(Mesh* mesh, Camera* camera, std::vector<PointLight*> pointLights) {
-
-	glBindFramebuffer(GL_FRAMEBUFFER, 0);
-	glDisable(GL_DEPTH_TEST);
-	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-	glEnable(GL_FRAMEBUFFER_SRGB);
-	auto geometry = mesh->mGeometry;
-	LightingMaterial* lightingMat = (LightingMaterial*)mesh->mMaterial;
-	Shader* shader = mLightingShader;
-	shader->begin();
-
-	shader->setInt("gPosition", 0);
-	lightingMat->mPosition->setUnit(0);
-	lightingMat->mPosition->bind();
-
-	shader->setInt("gNormal", 1);
-	lightingMat->mNormal->setUnit(1);
-	lightingMat->mNormal->bind();
-
-	shader->setInt("gAlbedoSpec", 2);
-	lightingMat->mAlbedoSpec->setUnit(2);
-	lightingMat->mAlbedoSpec->bind();
-
-	shader->setVector3("cameraPosition", camera->mPosition);
-
-	for (int i = 0; i < pointLights.size(); i++) {
-
-		shader->setVector3("pointLights[" + std::to_string(i) + "].color", pointLights[i]->mColor);
-		shader->setVector3("pointLights[" + std::to_string(i) + "].position", pointLights[i]->getPosition());
-	}
-
-	glBindVertexArray(geometry->getVao());
-
-	// 3.4 Draw
-	glDrawElements(GL_TRIANGLES, geometry->getIndicesCount(), GL_UNSIGNED_INT, 0);
-	shader->end();
-
-}
-

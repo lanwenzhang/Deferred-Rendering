@@ -34,7 +34,6 @@ public:
 	}
 
 	glm::mat4 getModelMatrix() const;
-	glm::vec3 getDirection() const;
 
 	// Parent
 	void addChild(Object* obj);

@@ -74,15 +74,6 @@ glm::mat4 Object::getModelMatrix() const {
 	return transform;
 }
 
-glm::vec3 Object::getDirection() const {
-
-	auto modelMatrix = glm::mat3(getModelMatrix());
-
-	auto dir = glm::normalize(-modelMatrix[2]);
-
-	return dir;
-}
-
 void Object::addChild(Object* obj){
 
 	// 1 Check whether add before

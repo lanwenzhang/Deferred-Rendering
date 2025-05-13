@@ -64,15 +64,16 @@ bool Application::init(const int& width, const int& height) {
 }
 
 bool Application::update() {
-
     if (glfwWindowShouldClose(mWindow)) {
         return false;
     }
     
-    // Get and send message
+    // 3.1 Get and send message
     glfwPollEvents();
 
-    // Swap double buffer
+    // 3.3 Render
+
+    // 3.4 Swap double buffer
     glfwSwapBuffers(mWindow);
 
     return true;

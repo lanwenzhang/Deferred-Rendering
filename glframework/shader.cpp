@@ -7,13 +7,36 @@
 
 Shader::Shader(const char* vertexPath, const char* fragmentPath){
 	
+    // Save the vertex and fragment shader code 
 	std::string vertexCode;
 	std::string fragmentCode;
 
+	// Read vertex and fragment shader file
+	std::ifstream vShaderFile;
+	std::ifstream fShaderFile;
+
+	// Monitor errors
+	vShaderFile.exceptions(std::ifstream::failbit | std::ifstream::badbit);
+	fShaderFile.exceptions(std::ifstream::failbit | std::ifstream::badbit);
 	try {
 
-        vertexCode = loadShader(vertexPath);
-		fragmentCode = loadShader(fragmentPath);
+		// Open the file
+		vShaderFile.open(vertexPath);
+		fShaderFile.open(fragmentPath);
+
+		// Read the file
+		std::stringstream vShaderStream, fShaderStream;
+		vShaderStream << vShaderFile.rdbuf();
+        fShaderStream << fShaderFile.rdbuf();
+
+
+		// Close the file
+		vShaderFile.close();
+		fShaderFile.close();
+
+		// Save to the code
+		vertexCode = vShaderStream.str();
+		fragmentCode = fShaderStream.str();
 
 	}
 
@@ -58,35 +81,6 @@ Shader::Shader(const char* vertexPath, const char* fragmentPath){
     GL_CALL(glDeleteShader(fragment));
 }
 
-std::string Shader::loadShader(const std::string& filePath) {
-
-    std::ifstream file(filePath);
-    std::stringstream shaderStream;
-    std::string line;
-
-    while (std::getline(file, line)) {
-
-        if (line.find("#include") != std::string::npos) {
-
-            auto start = line.find("\"");
-            auto end = line.find_last_of("\"");
-            std::string includeFile = line.substr(start + 1, end - start - 1);
-
-            auto lastSlashPos = filePath.find_last_of("/\\");
-            auto folder = filePath.substr(0, lastSlashPos + 1);
-            auto totalPath = folder + includeFile;
-            shaderStream << loadShader(totalPath);
-
-        }
-        else {
-
-            shaderStream << line << "\n";
-        }
-    }
-
-    return shaderStream.str();
-}
-
 Shader::~Shader(){
 }
 
@@ -105,13 +99,6 @@ void Shader::setFloat(const std::string& name, float value) {
 
     // 2 Input value to uniform
     glUniform1f(location, value);
-}
-
-void Shader::setFloatArray(const std::string& name, float* value, int count) {
-
-    GLint location = GL_CALL(glGetUniformLocation(mProgram, name.c_str()));
-
-    GL_CALL(glUniform1fv(location, count, value));
 }
 
 void Shader::setVector3(const std::string& name, float x, float y, float z) {
