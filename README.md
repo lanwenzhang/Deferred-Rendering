@@ -1,6 +1,6 @@
 # Deferred-Rendering
 
-Break down rendering into geometry pass and lighting pass
+A G-buffer-based rendering pipeline with geometry and lighting passes
 
 ## Screenshots
 ![Deferred-Rendering](data/screenshot.gif)
